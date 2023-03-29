@@ -11,9 +11,9 @@ int main()
 {
     long long sz;
 
-    char buf[1];
+    char buf[BUFSIZ];
     char write_buf[] = "testing writing";
-    int offset = 100; /* TODO: try test something bigger than the limit */
+    int offset = 500; /* TODO: try test something bigger than the limit */
 
     int fd = open(FIB_DEV, O_RDWR);
     if (fd < 0) {
@@ -28,20 +28,26 @@ int main()
 
     for (int i = 0; i <= offset; i++) {
         lseek(fd, i, SEEK_SET);
-        sz = read(fd, buf, 1);
-        printf("Reading from " FIB_DEV
-               " at offset %d, returned the sequence "
-               "%lld.\n",
-               i, sz);
+        sz = read(fd, buf, BUFSIZ);
+        if (sz >= 0)
+            printf("Reading from " FIB_DEV
+                   " at offset %d, returned the sequence "
+                   "%s.\n",
+                   i, buf);
+        else
+            printf("Copy_from_kernel error\n");
     }
 
     for (int i = offset; i >= 0; i--) {
         lseek(fd, i, SEEK_SET);
-        sz = read(fd, buf, 1);
-        printf("Reading from " FIB_DEV
-               " at offset %d, returned the sequence "
-               "%lld.\n",
-               i, sz);
+        sz = read(fd, buf, BUFSIZ);
+        if (sz >= 0)
+            printf("Reading from " FIB_DEV
+                   " at offset %d, returned the sequence "
+                   "%s.\n",
+                   i, buf);
+        else
+            printf("Copy_from_kernel error\n");
     }
 
     close(fd);
