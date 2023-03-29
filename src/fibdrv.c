@@ -6,6 +6,9 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
+#include <linux/sysfs.h>
+
+#include "bignum.h"
 
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_AUTHOR("National Cheng Kung University, Taiwan");
@@ -17,27 +20,79 @@ MODULE_VERSION("0.1");
 /* MAX_LENGTH is set to 92 because
  * ssize_t can't fit the number > 92
  */
-#define MAX_LENGTH 92
+#define MAX_LENGTH 500
+
+// static int foo = 1;
+
+/*
+ * The "foo" file where a static variable is read from and written to.
+ */
+// static ssize_t foo_show(struct kobject *kobj,
+//                         struct kobj_attribute *attr,
+//                         char *buf)
+// {
+//     return sysfs_emit(buf, "%d\n", foo);
+// }
+
+// static ssize_t foo_store(struct kobject *kobj,
+//                          struct kobj_attribute *attr,
+//                          const char *buf,
+//                          size_t count)
+// {
+//     int ret;
+
+//     ret = kstrtoint(buf, 10, &foo);
+//     if (ret < 0)
+//         return ret;
+
+//     return count;
+// }
+
+
+// /* Sysfs attributes cannot be world-writable. */
+// static struct kobj_attribute foo_attribute =
+//     __ATTR(foo, 0664, foo_show, foo_store);
+
+
+// /*
+//  * Create a group of attributes so that we can create and destroy them all
+//  * at once.
+//  */
+// static struct attribute *attrs[] = {
+//     &foo_attribute.attr,
+//     NULL, /* need to NULL terminate the list of attributes */
+// };
+
+/*
+ * An unnamed attribute group will put all of the attributes directly in
+ * the kobject directory.  If we specify a name, a subdirectory will be
+ * created for the attributes with the directory being the name of the
+ * attribute group.
+ */
+// static struct attribute_group attr_group = {
+//     .attrs = attrs,
+// };
 
 static dev_t fib_dev = 0;
 static struct cdev *fib_cdev;
 static struct class *fib_class;
 static DEFINE_MUTEX(fib_mutex);
+// static struct kobject *fib_kobj;
 
-static long long fib_sequence(long long k)
-{
-    /* FIXME: C99 variable-length array (VLA) is not allowed in Linux kernel. */
-    long long f[k + 2];
+// static long long fib_sequence(long long k)
+// {
+//     /* FIXME: C99 variable-length array (VLA) is not allowed in Linux kernel.
+//     */ long long f[k + 2];
 
-    f[0] = 0;
-    f[1] = 1;
+//     f[0] = 0;
+//     f[1] = 1;
 
-    for (int i = 2; i <= k; i++) {
-        f[i] = f[i - 1] + f[i - 2];
-    }
+//     for (int i = 2; i <= k; i++) {
+//         f[i] = f[i - 1] + f[i - 2];
+//     }
 
-    return f[k];
-}
+//     return f[k];
+// }
 
 static int fib_open(struct inode *inode, struct file *file)
 {
@@ -54,13 +109,35 @@ static int fib_release(struct inode *inode, struct file *file)
     return 0;
 }
 
+// /* calculate the fibonacci number at given offset */
+// static ssize_t fib_read(struct file *file,
+//                         char *buf,
+//                         size_t size,
+//                         loff_t *offset)
+// {
+//     return (ssize_t) fib_sequence(*offset);
+// }
+
 /* calculate the fibonacci number at given offset */
 static ssize_t fib_read(struct file *file,
-                        char *buf,
+                        char __user *buf,
                         size_t size,
                         loff_t *offset)
 {
-    return (ssize_t) fib_sequence(*offset);
+    char *output = bn_fast_doubling(*offset);
+    ssize_t len = strlen(output) + 1;
+    int ret = 0;
+    printk(KERN_INFO "%ld HERE\n", size);
+    // foo_store(fib_kobj, &foo_attribute, "hello", 5);
+    // char buffer[90];
+    // foo_show(fib_kobj, &foo_attribute, buffer);
+
+    ret = copy_to_user(buf, output, len);
+    if (ret)
+        return -EFAULT;
+
+    kfree(output);
+    return len;
 }
 
 /* write operation is skipped */
@@ -104,11 +181,21 @@ const struct file_operations fib_fops = {
     .llseek = fib_device_lseek,
 };
 
+
 static int __init init_fib_dev(void)
 {
     int rc = 0;
 
     mutex_init(&fib_mutex);
+
+    // fib_kobj = kobject_create_and_add("kobject_fib", kernel_kobj);
+    // if (!fib_kobj)
+    //     return -ENOMEM;
+
+    // /* Create the files associated with this kobject */
+    // rc = sysfs_create_group(fib_kobj, &attr_group);
+    // if (rc)
+    //     kobject_put(fib_kobj);
 
     // Let's register the device
     // This will dynamically allocate the major number
@@ -161,6 +248,7 @@ failed_cdev:
 
 static void __exit exit_fib_dev(void)
 {
+    // kobject_put(fib_kobj);
     mutex_destroy(&fib_mutex);
     device_destroy(fib_class, fib_dev);
     class_destroy(fib_class);
